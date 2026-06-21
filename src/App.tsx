@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { useGameStore } from './store/gameStore';
 import { Home } from './components/Home';
+import { ModeSelection } from './components/ModeSelection';
 import { Shop } from './components/Shop';
 import { GameOver } from './components/GameOver';
 import { EventBus } from './game/EventBus';
@@ -55,6 +56,7 @@ const App: React.FC = () => {
 
       {/* React UI Overlays */}
       {gameState === 'menu' && <Home />}
+      {gameState === 'mode_selection' && <ModeSelection />}
       {gameState === 'shop' && <Shop />}
       {gameState === 'gameover' && <GameOver />}
     </div>

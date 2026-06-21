@@ -51,15 +51,33 @@ export function Shop() {
               >
                 {/* Visual Preview */}
                 <div className="h-40 flex items-center justify-center bg-[#1a1a1a] border-b border-[#444] relative overflow-hidden">
-                  <div className="flex items-center gap-1">
-                    <div className="w-8 h-8 rounded-full z-10 relative" style={{ backgroundColor: `#${skin.headColor.toString(16).padStart(6, '0')}` }}>
+                  <div className="flex items-center -space-x-7 flex-row-reverse">
+                    {/* Head */}
+                    <div 
+                      className="w-10 h-10 rounded-[40%] z-20 relative border-2 border-black/80 shadow-[2px_0_4px_rgba(0,0,0,0.3)]" 
+                      style={{ backgroundColor: `#${skin.headColor.toString(16).padStart(6, '0')}` }}
+                    >
                       {/* Eyes */}
-                      <div className="absolute top-2 left-1 w-2 h-2 bg-white rounded-full"><div className="absolute top-0.5 left-0.5 w-1 h-1 bg-black rounded-full" /></div>
-                      <div className="absolute top-2 right-1 w-2 h-2 bg-white rounded-full"><div className="absolute top-0.5 left-0.5 w-1 h-1 bg-black rounded-full" /></div>
+                      <div className="absolute top-2 left-1.5 w-3 h-3 bg-white rounded-full border border-black/80"><div className="absolute top-1 right-1 w-1.5 h-1.5 bg-black rounded-full" /></div>
+                      <div className="absolute top-2 right-1.5 w-3 h-3 bg-white rounded-full border border-black/80"><div className="absolute top-1 right-1 w-1.5 h-1.5 bg-black rounded-full" /></div>
+                      {/* Tongue */}
+                      <div className="absolute -right-2 top-1/2 -translate-y-1/2 w-3 h-1 bg-red-600 z-[-1]" />
                     </div>
-                    <div className="w-6 h-6 rounded-full -ml-3" style={{ backgroundColor: `#${skin.color.toString(16).padStart(6, '0')}` }} />
-                    <div className="w-6 h-6 rounded-full -ml-2" style={{ backgroundColor: `#${skin.color.toString(16).padStart(6, '0')}` }} />
-                    <div className="w-6 h-6 rounded-full -ml-2" style={{ backgroundColor: `#${skin.color.toString(16).padStart(6, '0')}` }} />
+                    {/* Body segments */}
+                    {[1, 2, 3].map(i => (
+                      <div 
+                        key={i} 
+                        className="w-8 h-8 rounded-full border-2 border-black/80 relative"
+                        style={{ 
+                          backgroundColor: `#${skin.color.toString(16).padStart(6, '0')}`,
+                          zIndex: 15 - i
+                        }}
+                      >
+                        {/* Shiny scale highlight */}
+                        <div className="absolute inset-1 rounded-full bg-white/15" />
+                        <div className="absolute inset-0 rounded-full bg-black/10 shadow-inner" />
+                      </div>
+                    ))}
                   </div>
                 </div>
 

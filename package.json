@@ -5,7 +5,7 @@
   "templateType": "freestyle",
   "scripts": {
     "dev": "vite",
-    "build": "npm install --legacy-peer-deps && vite build",
+    "build": "vite build",
     "preview": "vite preview"
   },
   "dependencies": {

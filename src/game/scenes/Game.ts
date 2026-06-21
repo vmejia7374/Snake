@@ -3,28 +3,17 @@ import { EventBus } from '../EventBus';
 import { useGameStore, SNAKE_SKINS } from '../../store/gameStore';
 
 const WORLD_SIZE = 1000000;
-const INITIAL_SPEED = 250;
+const INITIAL_SPEED = 400;
 const SNAKE_RADIUS = 16;
 const AI_SNAKE_COUNT = 60;
 
 class SnakeSegment {
-    public sprite: Phaser.GameObjects.Graphics;
+    public sprite: Phaser.GameObjects.Image;
     
-    constructor(scene: Scene, x: number, y: number, color: number, radius: number, isHead: boolean = false) {
-        this.sprite = scene.add.graphics();
-        this.sprite.fillStyle(color);
-        this.sprite.fillCircle(0, 0, radius);
-        if (isHead) {
-            // Draw eyes
-            this.sprite.fillStyle(0xFFFFFF);
-            this.sprite.fillCircle(radius * 0.4, -radius * 0.4, radius * 0.25);
-            this.sprite.fillCircle(radius * 0.4, radius * 0.4, radius * 0.25);
-            this.sprite.fillStyle(0x000000);
-            this.sprite.fillCircle(radius * 0.5, -radius * 0.4, radius * 0.1);
-            this.sprite.fillCircle(radius * 0.5, radius * 0.4, radius * 0.1);
-        }
-        this.sprite.setPosition(x, y);
-        this.sprite.setDepth(10);
+    constructor(scene: Scene, x: number, y: number, color: number, headColor: number, radius: number, isHead: boolean = false) {
+        const textureKey = isHead ? `head_${headColor}` : `body_${color}`;
+        this.sprite = scene.add.image(x, y, textureKey);
+        this.sprite.setDepth(isHead ? 11 : 10); // Head above body
     }
 
     destroy() {
@@ -74,9 +63,8 @@ class Snake {
         const posY = y !== undefined ? y : this.segments[this.segments.length - 1].sprite.y;
         
         const isHead = this.segments.length === 0;
-        const col = isHead ? this.headColor : this.color;
         
-        const segment = new SnakeSegment(this.scene, posX, posY, col, this.radius, isHead);
+        const segment = new SnakeSegment(this.scene, posX, posY, this.color, this.headColor, this.radius, isHead);
         
         if (isHead) {
             this.segments.unshift(segment);
@@ -92,20 +80,9 @@ class Snake {
         }
         this.score += amount * 10;
         this.radius = Math.min(SNAKE_RADIUS * 2, SNAKE_RADIUS + this.score * 0.005);
+        const scale = this.radius / SNAKE_RADIUS;
         this.segments.forEach((seg, index) => {
-            seg.sprite.clear();
-            const col = index === 0 ? this.headColor : this.color;
-            seg.sprite.fillStyle(col);
-            const r = index === 0 ? this.radius : this.radius * 0.95;
-            seg.sprite.fillCircle(0, 0, r);
-            if (index === 0) {
-                seg.sprite.fillStyle(0xFFFFFF);
-                seg.sprite.fillCircle(r * 0.4, -r * 0.4, r * 0.25);
-                seg.sprite.fillCircle(r * 0.4, r * 0.4, r * 0.25);
-                seg.sprite.fillStyle(0x000000);
-                seg.sprite.fillCircle(r * 0.5, -r * 0.4, r * 0.1);
-                seg.sprite.fillCircle(r * 0.5, r * 0.4, r * 0.1);
-            }
+            seg.sprite.setScale(index === 0 ? scale : scale * 0.95);
         });
     }
 
@@ -135,17 +112,33 @@ class Snake {
         if (this.y < 0) this.y = 0;
         if (this.y > WORLD_SIZE) this.y = WORLD_SIZE;
 
-        // Save history
-        this.history.unshift({x: this.x, y: this.y});
+        // Save history smoothly based on distance, not frames, for consistent spacing
+        let lastPos = this.history[0] || { x: this.x, y: this.y };
+        let distToLast = Phaser.Math.Distance.Between(this.x, this.y, lastPos.x, lastPos.y);
+        
+        // Interpolate to ensure history points are EXACTLY 2 pixels apart
+        while (distToLast >= 2) {
+            const fraction = 2 / distToLast;
+            const interpX = Phaser.Math.Linear(lastPos.x, this.x, fraction);
+            const interpY = Phaser.Math.Linear(lastPos.y, this.y, fraction);
+            
+            this.history.unshift({ x: interpX, y: interpY });
+            
+            lastPos = this.history[0];
+            distToLast = Phaser.Math.Distance.Between(this.x, this.y, lastPos.x, lastPos.y);
+        }
+        if (this.history.length === 0) {
+            this.history.unshift({x: this.x, y: this.y});
+        }
         
         // Ensure history isn't too long
-        const maxHistory = this.segments.length * 15;
+        const spacing = 2; // 2 pixels * 2 = 4 pixels between segments
+        const maxHistory = this.segments.length * spacing + 10;
         if (this.history.length > maxHistory) {
             this.history.length = maxHistory;
         }
 
         // Update segment positions
-        const spacing = 10; // frames of history between segments
         for (let i = 0; i < this.segments.length; i++) {
             const historyIndex = Math.min(i * spacing, this.history.length - 1);
             const pos = this.history[historyIndex];
@@ -167,7 +160,7 @@ class Snake {
 export class Game extends Scene {
     private player!: Snake | null;
     private aiSnakes: Snake[] = [];
-    private coins: Phaser.GameObjects.Graphics[] = [];
+    private coins: Phaser.GameObjects.Image[] = [];
     private coinsCollected: number = 0;
     
     private gameState: string = 'menu';
@@ -181,7 +174,114 @@ export class Game extends Scene {
         super('Game');
     }
 
+    generateTextures() {
+        if (this.textures.exists('coin')) return;
+
+        const radius = SNAKE_RADIUS;
+        
+        SNAKE_SKINS.forEach(skin => {
+            if (!this.textures.exists(`body_${skin.color}`)) {
+                const gBody = this.add.graphics();
+                gBody.lineStyle(3, 0x000000, 0.6);
+                gBody.fillStyle(skin.color);
+                gBody.fillCircle(radius + 4, radius + 4, radius);
+                gBody.strokeCircle(radius + 4, radius + 4, radius);
+                gBody.fillStyle(0xFFFFFF, 0.15);
+                gBody.fillCircle(radius + 4, radius + 4, radius * 0.6);
+                gBody.fillStyle(0x000000, 0.1);
+                gBody.beginPath();
+                gBody.arc(radius + 4, radius + 4, radius, 0, Math.PI, false);
+                gBody.fillPath();
+                gBody.generateTexture(`body_${skin.color}`, radius * 2 + 8, radius * 2 + 8);
+                gBody.destroy();
+            }
+
+            if (!this.textures.exists(`head_${skin.headColor}`)) {
+                const gHead = this.add.graphics();
+                const cx = radius * 2;
+                const cy = radius * 2;
+                
+                gHead.lineStyle(3, 0x000000, 0.6);
+                gHead.fillStyle(skin.headColor);
+                gHead.fillEllipse(cx + radius * 0.2, cy, radius * 2.4, radius * 2.2);
+                gHead.strokeEllipse(cx + radius * 0.2, cy, radius * 2.4, radius * 2.2);
+                
+                gHead.lineStyle(1.5, 0x000000, 0.8);
+                gHead.fillStyle(0xFFFFFF);
+                gHead.fillCircle(cx + radius * 0.6, cy - radius * 0.6, radius * 0.4);
+                gHead.strokeCircle(cx + radius * 0.6, cy - radius * 0.6, radius * 0.4);
+                gHead.fillCircle(cx + radius * 0.6, cy + radius * 0.6, radius * 0.4);
+                gHead.strokeCircle(cx + radius * 0.6, cy + radius * 0.6, radius * 0.4);
+                
+                gHead.fillStyle(0x000000);
+                gHead.fillCircle(cx + radius * 0.7, cy - radius * 0.6, radius * 0.15);
+                gHead.fillCircle(cx + radius * 0.7, cy + radius * 0.6, radius * 0.15);
+                
+                gHead.fillStyle(0xFF0000);
+                gHead.beginPath();
+                gHead.moveTo(cx + radius * 1.4, cy - radius * 0.1);
+                gHead.lineTo(cx + radius * 1.8, cy - radius * 0.2);
+                gHead.lineTo(cx + radius * 1.6, cy);
+                gHead.lineTo(cx + radius * 1.8, cy + radius * 0.2);
+                gHead.lineTo(cx + radius * 1.4, cy + radius * 0.1);
+                gHead.fillPath();
+
+                gHead.generateTexture(`head_${skin.headColor}`, radius * 4, radius * 4);
+                gHead.destroy();
+            }
+        });
+
+        const gCoin = this.add.graphics();
+        gCoin.fillStyle(0xFFD700);
+        gCoin.beginPath();
+        gCoin.moveTo(12, 2);
+        gCoin.lineTo(22, 12);
+        gCoin.lineTo(12, 22);
+        gCoin.lineTo(2, 12);
+        gCoin.closePath();
+        gCoin.fillPath();
+        gCoin.fillStyle(0xFFC200);
+        gCoin.beginPath();
+        gCoin.moveTo(12, 6);
+        gCoin.lineTo(18, 12);
+        gCoin.lineTo(12, 18);
+        gCoin.lineTo(6, 12);
+        gCoin.closePath();
+        gCoin.fillPath();
+        gCoin.generateTexture('coin', 24, 24);
+        gCoin.destroy();
+
+        const colors = [0xFF3366, 0x33CCFF, 0x33FF66, 0xFF9933, 0xCC33FF, 0xFFFFFF];
+        colors.forEach(color => {
+            for (let shape = 0; shape < 3; shape++) {
+                const key = `seed_${color}_${shape}`;
+                if (!this.textures.exists(key)) {
+                    const gSeed = this.add.graphics();
+                    gSeed.fillStyle(color);
+                    if (shape === 0) {
+                        gSeed.fillCircle(8, 8, 7);
+                        gSeed.fillStyle(0xFFFFFF, 0.5);
+                        gSeed.fillCircle(6, 6, 2);
+                    } else if (shape === 1) {
+                        gSeed.fillRect(2, 2, 12, 12);
+                    } else {
+                        gSeed.beginPath();
+                        gSeed.moveTo(8, 1);
+                        gSeed.lineTo(15, 13);
+                        gSeed.lineTo(1, 13);
+                        gSeed.closePath();
+                        gSeed.fillPath();
+                    }
+                    gSeed.generateTexture(key, 16, 16);
+                    gSeed.destroy();
+                }
+            }
+        });
+    }
+
     create() {
+        this.generateTextures();
+        
         // Create world bounds large enough
         this.physics.world.setBounds(0, 0, WORLD_SIZE, WORLD_SIZE);
         this.cameras.main.setBounds(0, 0, WORLD_SIZE, WORLD_SIZE);
@@ -244,7 +344,7 @@ export class Game extends Scene {
         this.player = new Snake(
             this, 
             WORLD_SIZE / 2, WORLD_SIZE / 2, 
-            10, 
+            40, 
             skin.color, skin.headColor, 
             true
         );
@@ -300,7 +400,7 @@ export class Game extends Scene {
         const randomSkin = SNAKE_SKINS[Phaser.Math.Between(0, SNAKE_SKINS.length - 1)];
         const ai = new Snake(
             this, spawnX, spawnY,
-            Phaser.Math.Between(5, 25),
+            Phaser.Math.Between(25, 60),
             randomSkin.color,
             randomSkin.headColor,
             false
@@ -309,39 +409,29 @@ export class Game extends Scene {
     }
 
     spawnCoin(x: number, y: number, value: number) {
-        const coin = this.add.graphics();
-        coin.fillStyle(0xFFD700);
-        coin.beginPath();
-        coin.moveTo(0, -8);
-        coin.lineTo(8, 0);
-        coin.lineTo(0, 8);
-        coin.lineTo(-8, 0);
-        coin.closePath();
-        coin.fillPath();
-        coin.fillStyle(0xFFC200);
-        coin.beginPath();
-        coin.moveTo(0, -5);
-        coin.lineTo(5, 0);
-        coin.lineTo(0, 5);
-        coin.lineTo(-5, 0);
-        coin.closePath();
-        coin.fillPath();
+        let sprite: Phaser.GameObjects.Image;
+        if (value === 2) {
+            sprite = this.add.image(x, y, 'coin');
+        } else {
+            const colors = [0xFF3366, 0x33CCFF, 0x33FF66, 0xFF9933, 0xCC33FF, 0xFFFFFF];
+            const color = colors[Phaser.Math.Between(0, colors.length - 1)];
+            const shape = Phaser.Math.Between(0, 2);
+            sprite = this.add.image(x, y, `seed_${color}_${shape}`);
+        }
         
-        coin.setPosition(x, y);
-        coin.setDepth(5);
-        // Add arbitrary value to object to track coin worth
-        (coin as any).coinValue = value;
+        sprite.setDepth(5);
+        (sprite as any).coinValue = value;
         
         // Spawn animation
-        coin.setScale(0);
+        sprite.setScale(0);
         this.tweens.add({
-            targets: coin,
+            targets: sprite,
             scale: 1,
             duration: 200,
             ease: 'Back.easeOut'
         });
 
-        this.coins.push(coin);
+        this.coins.push(sprite);
     }
 
     clearGame() {
@@ -362,7 +452,18 @@ export class Game extends Scene {
 
         // Smooth zoom
         const curZoom = this.cameras.main.zoom;
-        this.cameras.main.setZoom(curZoom + (this.targetZoom - curZoom) * 0.1);
+        const newZoom = curZoom + (this.targetZoom - curZoom) * 0.1;
+        this.cameras.main.setZoom(newZoom);
+
+        // Keep UI fixed and unscaled
+        if (this.scoreText && this.scoreText.active) {
+            this.scoreText.setScale(1 / newZoom);
+            this.scoreText.setPosition(24 / newZoom, 24 / newZoom);
+        }
+        if (this.coinsText && this.coinsText.active) {
+            this.coinsText.setScale(1 / newZoom);
+            this.coinsText.setPosition(24 / newZoom, 60 / newZoom);
+        }
 
         // Infinite background moving logic
         this.bgTile.tilePositionX = this.cameras.main.scrollX;
@@ -408,7 +509,7 @@ export class Game extends Scene {
     checkCollisions() {
         const allSnakes = this.player && !this.player.isDead ? [this.player, ...this.aiSnakes] : this.aiSnakes;
 
-        // Check snake eating snake
+        // Check snake collision
         for (let i = 0; i < allSnakes.length; i++) {
             for (let j = 0; j < allSnakes.length; j++) {
                 if (i === j) continue;
@@ -418,22 +519,50 @@ export class Game extends Scene {
                 
                 if (snakeA.isDead || snakeB.isDead) continue;
 
-                // Distance between head A and any body part of B
-                const dist = Phaser.Math.Distance.Between(snakeA.x, snakeA.y, snakeB.x, snakeB.y);
+                // Simple bounding box check first for optimization
+                if (Math.abs(snakeA.x - snakeB.x) > 1000 && Math.abs(snakeA.y - snakeB.y) > 1000) {
+                    continue; // Too far away to ever collide
+                }
+
+                // Check head to head using squared distance
+                const headDistSq = Phaser.Math.Distance.BetweenPointsSquared(snakeA, snakeB);
+                const headRadiiSq = Math.pow(snakeA.radius + snakeB.radius, 2);
                 
-                // Simplified collision: head to head check
-                // Actually in requirements: if your head overlaps a weaker snake, you eat it.
-                if (dist < snakeA.radius + snakeB.radius) {
+                if (headDistSq < headRadiiSq) {
                     if (snakeA.score > snakeB.score) {
-                        this.eatSnake(snakeA, snakeB);
+                        this.eatSnake(snakeA, snakeB); // B is smaller, B dies
                     } else if (snakeB.score > snakeA.score) {
-                        this.eatSnake(snakeB, snakeA);
+                        this.eatSnake(snakeB, snakeA); // A is smaller, A dies
                     } else {
                         // Same size, bounce
                         snakeA.targetAngle += Math.PI;
                         snakeB.targetAngle += Math.PI;
                     }
+                    continue; // Skip body check
                 }
+
+                // Check head A to body B (A crashes into B's body)
+                let hitBody = false;
+                const bodyRadiiSq = Math.pow(snakeA.radius + snakeB.radius * 0.8, 2);
+                
+                // Only check every 2nd segment to improve performance (still very reliable since segments overlap 87.5%)
+                for (let k = 1; k < snakeB.segments.length; k += 2) { 
+                    const segment = snakeB.segments[k];
+                    
+                    // Quick bounding box check
+                    if (Math.abs(snakeA.x - segment.sprite.x) > 50 || Math.abs(snakeA.y - segment.sprite.y) > 50) {
+                        continue;
+                    }
+                    
+                    const distSq = Phaser.Math.Distance.BetweenPointsSquared(snakeA, segment.sprite);
+                    if (distSq < bodyRadiiSq) {
+                        // A hit B's body, A dies!
+                        this.eatSnake(snakeB, snakeA);
+                        hitBody = true;
+                        break;
+                    }
+                }
+                if (hitBody) continue;
             }
         }
 
@@ -445,8 +574,15 @@ export class Game extends Scene {
             for (const snake of allSnakes) {
                 if (snake.isDead) continue;
                 
-                const dist = Phaser.Math.Distance.Between(snake.x, snake.y, coin.x, coin.y);
-                if (dist < snake.radius + 8) {
+                // Quick bounding box check
+                if (Math.abs(snake.x - coin.x) > 50 || Math.abs(snake.y - coin.y) > 50) {
+                    continue;
+                }
+                
+                const distSq = Phaser.Math.Distance.BetweenPointsSquared(snake, coin);
+                const collectRadiiSq = Math.pow(snake.radius + 8, 2);
+                
+                if (distSq < collectRadiiSq) {
                     // Collect
                     const val = (coin as any).coinValue || 1;
                     snake.grow(val);
